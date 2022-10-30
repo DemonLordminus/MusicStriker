@@ -18,7 +18,7 @@ namespace moveController
         public float PlayerGravitySpeedMax;
         [Header("碰撞体")]
         public int playerMask=8;
-        private CapsuleCollider2D capsuleCollider;
+        public BoxCollider2D boxCollider;
         private Vector3 colliderSize,colliderPosition;
         private Collider2D[] colliders;
         public bool isOnGround;
@@ -47,6 +47,13 @@ namespace moveController
         public int dashSpeedDecayFrame;
         [SaveDuringPlay]
         public float dashSpeedDecay;
+        [Header("是否防止卡墙里")]
+        public bool isEnableAvoidStuck;
+        public Collider2D[] avoidStuckCollider;
+        private Vector3 lastPos;//用于防止卡墙里
+        [Range(0f,1f)]
+        public float avoidSize;
+        private Rigidbody2D rb2d; 
         enum dashState
         {
             noDash=0,
@@ -56,8 +63,11 @@ namespace moveController
         }
         private void Awake()
         {
-            capsuleCollider = GetComponent<CapsuleCollider2D>();
- 
+            if (boxCollider == null)
+            {
+                boxCollider = GetComponent<BoxCollider2D>();
+            }
+            rb2d = GetComponent<Rigidbody2D>();
         }
         // Start is called before the first frame update
         void Start()
@@ -77,6 +87,7 @@ namespace moveController
             HandleGravity();
             DashMoveHandle();
             MoveHandle();
+            AvoidStuck();
 
 #if UNITY_EDITOR
 
@@ -104,7 +115,7 @@ namespace moveController
         [EditorButton]
         public void Dash(Vector2 _dashDireciton)
         {
-            if (--dashCount > 0)
+            if (--dashCount >= 0)
             {
                 dashDirection = _dashDireciton;
                 dashNowFrame = 0;
@@ -161,7 +172,7 @@ namespace moveController
             //Debug.Log(playerCurrentSpeed);
             playerCurrentSpeed=DashCurrentSpeed+GravityCurrentSpeed;
             transform.Translate(playerCurrentSpeed);
-
+            //rb2d.velocity = playerCurrentSpeed;
             Vector2 pos=transform.position;
             Debug.DrawLine(transform.position,pos+DashCurrentSpeed*10,Color.red);
         }
@@ -169,7 +180,7 @@ namespace moveController
         #region 冲刺次数相关
         private bool ResetDashCountOnGround()
         {
-            if(isOnGround)
+            if(isOnGround && dashStateNow!=dashState.speedUp)
             {
                 ResetDashCount();
                 return true;
@@ -185,26 +196,40 @@ namespace moveController
         #region 地面检测
         bool OnGroundCheck()
         {
-            Vector2 pos= transform.position;
-            colliderPosition=capsuleCollider.offset+pos;
-            colliderSize=capsuleCollider.size*transform.localScale;
-            //Debug.DrawLine(colliderPosition,)
-            LayerMask ignoreMask = ~(1 << playerMask);
-            colliders = Physics2D.OverlapCapsuleAll(colliderPosition,colliderSize,0,0,ignoreMask);
-            if (colliders.Length != 0)
-            {
-                isOnGround = true;
-                return true;
-            }
-            else
-            {
-                isOnGround = false;
-                return false;
-            }
+                Vector2 pos = transform.position;
+                colliderPosition = boxCollider.offset + pos;
+                colliderSize = boxCollider.size * transform.localScale;            
+                LayerMask ignoreMask = ~(1 << playerMask);
+                colliders = Physics2D.OverlapBoxAll(colliderPosition, colliderSize, 0, ignoreMask);
+                if (colliders.Length != 0)
+                {
+                    isOnGround = true;
+                    return true;
+                }
+                else
+                {
+                    isOnGround = false;
+                    return false;
+                }
         }
-        private void leavelGround()
+        private void AvoidStuck() //如果检测到卡墙里，则返回上一个没卡墙里的位置
         {
-
+            if (isEnableAvoidStuck)
+            {
+                LayerMask ignoreMask = ~(1 << playerMask);
+               
+                avoidStuckCollider = Physics2D.OverlapBoxAll(colliderPosition, colliderSize * avoidSize, 0, 0, ignoreMask);
+                if (avoidStuckCollider.Length == 0)//没卡墙里
+                {
+                    lastPos = transform.position;
+                }
+                else
+                {
+                    //transform.position = lastPos;
+                    transform.TransformPoint(lastPos);
+                    
+                }
+            }
         }
         #endregion
     }
