@@ -18,7 +18,7 @@ namespace moveController
         public float PlayerGravitySpeedMax;
         [Header("碰撞体")]
         public int playerMask=8;
-        public BoxCollider2D boxCollider;
+        private BoxCollider2D boxCollider;
         private Vector3 colliderSize,colliderPosition;
         private Collider2D[] colliders;
         public bool isOnGround;
@@ -51,6 +51,7 @@ namespace moveController
         public bool isEnableAvoidStuck;
         public Collider2D[] avoidStuckCollider;
         private Vector3 lastPos;//用于防止卡墙里
+        private CapsuleCollider2D capsuleColliderForAvoidStuck;
         [Range(0f,1f)]
         public float avoidSize;
         private Rigidbody2D rb2d; 
@@ -68,6 +69,7 @@ namespace moveController
                 boxCollider = GetComponent<BoxCollider2D>();
             }
             rb2d = GetComponent<Rigidbody2D>();
+            capsuleColliderForAvoidStuck = GetComponent<CapsuleCollider2D>();
         }
         // Start is called before the first frame update
         void Start()
@@ -217,17 +219,19 @@ namespace moveController
             if (isEnableAvoidStuck)
             {
                 LayerMask ignoreMask = ~(1 << playerMask);
-               
-                avoidStuckCollider = Physics2D.OverlapBoxAll(colliderPosition, colliderSize * avoidSize, 0, 0, ignoreMask);
+                Vector2 pos = transform.position;
+                pos = capsuleColliderForAvoidStuck.offset + pos;
+                Vector2 size = capsuleColliderForAvoidStuck.size * avoidSize * transform.localScale;
+                avoidStuckCollider = Physics2D.OverlapCapsuleAll(pos, size, 0, 0, ignoreMask);
                 if (avoidStuckCollider.Length == 0)//没卡墙里
                 {
                     lastPos = transform.position;
                 }
                 else
                 {
-                    //transform.position = lastPos;
-                    transform.TransformPoint(lastPos);
-                    
+                    transform.position = lastPos;
+                    //transform.TransformPoint(lastPos);
+                    Debug.Log("卡墙里 返回");
                 }
             }
         }
