@@ -59,6 +59,7 @@ namespace moveController
         public float edgeCheckSize;
         private Rigidbody2D rb2d;
         private Vector2 nextPosOffset;
+        public bool isUseMovePostion;
         enum dashState
         {
             noDash = 0,
@@ -178,8 +179,16 @@ namespace moveController
             //Debug.Log(playerCurrentSpeed);
             playerCurrentSpeed = DashCurrentSpeed + GravityCurrentSpeed;
             CloseToEdge();
-            transform.Translate(playerCurrentSpeed+nextPosOffset);
-            nextPosOffset = Vector2.zero;
+            if (isUseMovePostion)
+            {
+                Vector2 nowPos = transform.position;
+                rb2d.MovePosition(playerCurrentSpeed + nowPos);
+            }
+            else
+            {
+                transform.Translate(playerCurrentSpeed + nextPosOffset);
+                nextPosOffset = Vector2.zero;
+            }
             //rb2d.velocity = playerCurrentSpeed;
             Vector2 pos = transform.position;
             Debug.DrawLine(transform.position, pos + DashCurrentSpeed * 10, Color.red);
@@ -202,7 +211,7 @@ namespace moveController
         }
         #endregion
         #region 地面检测
-        bool OnGroundCheck()
+        bool OnGroundCheck() //我的代码怎么写的，这里有Bug
         {
             Vector2 pos = transform.position;
             colliderPosition = boxCollider.offset + pos;
