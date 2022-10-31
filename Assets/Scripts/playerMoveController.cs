@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using Cinemachine;
 using UnityEditor;
+//using System.Drawing;
 
 namespace moveController
 {
@@ -19,7 +20,9 @@ namespace moveController
         public float PlayerGravitySpeedMax;
         [Header("碰撞体")]
         public int playerMask = 8;
-        private BoxCollider2D boxCollider;
+        //private BoxCollider2D boxCollider;
+        public Vector2 groundCheckPos;
+        public Vector2 groundCheckSize; 
         private Vector3 colliderSize, colliderPosition;
         private Collider2D[] colliders;
         public bool isOnGround;
@@ -69,10 +72,10 @@ namespace moveController
         }
         private void Awake()
         {
-            if (boxCollider == null)
-            {
-                boxCollider = GetComponent<BoxCollider2D>();
-            }
+            //if (boxCollider == null)
+            //{
+            //    boxCollider = GetComponent<BoxCollider2D>();
+            //}
             rb2d = GetComponent<Rigidbody2D>();
             capsuleCollider = GetComponent<CapsuleCollider2D>();
         }
@@ -214,8 +217,8 @@ namespace moveController
         bool OnGroundCheck() //我的代码怎么写的，这里有Bug
         {
             Vector2 pos = transform.position;
-            colliderPosition = boxCollider.offset + pos;
-            colliderSize = boxCollider.size * transform.localScale;
+            colliderPosition = groundCheckPos + pos;
+            colliderSize = groundCheckSize;
             LayerMask ignoreMask = ~(1 << playerMask);
             colliders = Physics2D.OverlapBoxAll(colliderPosition, colliderSize, 0, ignoreMask);
             if (colliders.Length != 0)
@@ -229,6 +232,12 @@ namespace moveController
                 return false;
             }
         }
+#if UNITY_EDITOR
+        private void OnDrawGizmos()
+        {
+            Gizmos.DrawWireCube(colliderPosition, colliderSize * 2);
+        }
+#endif
         //public Transform test1, test2;
         //private void AvoidStuck() //如果检测到卡墙里，则返回上一个没卡墙里的位置
         //{
@@ -277,7 +286,7 @@ namespace moveController
 
         //        }
         //    }
-            
+
         //}
         private void CloseToEdge()
         {
