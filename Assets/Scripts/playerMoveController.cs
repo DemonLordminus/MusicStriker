@@ -2,6 +2,7 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using Cinemachine;
+using UnityEditor;
 
 namespace moveController
 {
@@ -12,14 +13,14 @@ namespace moveController
         [Header("重力")]
         public bool isEnableGravity;
         private Vector2 GravityCurrentSpeed;
-        [Range(0f,1f)]
+        [Range(0f, 1f)]
         public float PlayerGravity;
         [Range(0f, 1f)]
         public float PlayerGravitySpeedMax;
         [Header("碰撞体")]
-        public int playerMask=8;
+        public int playerMask = 8;
         private BoxCollider2D boxCollider;
-        private Vector3 colliderSize,colliderPosition;
+        private Vector3 colliderSize, colliderPosition;
         private Collider2D[] colliders;
         public bool isOnGround;
         [Header("冲刺")]
@@ -48,19 +49,22 @@ namespace moveController
         [SaveDuringPlay]
         public float dashSpeedDecay;
         [Header("是否防止卡墙里")]
-        public bool isEnableAvoidStuck;
-        public Collider2D[] avoidStuckCollider;
-        private Vector3 lastPos;//用于防止卡墙里
-        private CapsuleCollider2D capsuleColliderForAvoidStuck;
-        [Range(0f,1f)]
-        public float avoidSize;
-        private Rigidbody2D rb2d; 
+        public bool isCloseToEdge;
+        public bool isNoSpeedUpWhenTouchEdge;
+        //public bool isEnableAvoidStuck;//已停用
+        //public Collider2D[] avoidStuckCollider;
+        //private Vector3 lastPos;//用于防止卡墙里
+        private CapsuleCollider2D capsuleCollider;
+        [Range(0f, 1f)]
+        public float edgeCheckSize;
+        private Rigidbody2D rb2d;
+        private Vector2 nextPosOffset;
         enum dashState
         {
-            noDash=0,
-            speedUp=1,
-            staySpeed=2,
-            speedDecay=3
+            noDash = 0,
+            speedUp = 1,
+            staySpeed = 2,
+            speedDecay = 3
         }
         private void Awake()
         {
@@ -69,7 +73,7 @@ namespace moveController
                 boxCollider = GetComponent<BoxCollider2D>();
             }
             rb2d = GetComponent<Rigidbody2D>();
-            capsuleColliderForAvoidStuck = GetComponent<CapsuleCollider2D>();
+            capsuleCollider = GetComponent<CapsuleCollider2D>();
         }
         // Start is called before the first frame update
         void Start()
@@ -89,8 +93,8 @@ namespace moveController
             HandleGravity();
             DashMoveHandle();
             MoveHandle();
-            AvoidStuck();
-
+            //AvoidStuck();
+          
 #if UNITY_EDITOR
 
 #endif
@@ -106,7 +110,7 @@ namespace moveController
                 float _speed = -Mathf.Clamp(-GravityCurrentSpeed.y + PlayerGravity, 0, PlayerGravitySpeedMax);
                 GravityCurrentSpeed = new Vector2(0, _speed);
             }
-            else 
+            else
             {
                 GravityCurrentSpeed = new Vector2(0, 0);
             }
@@ -129,7 +133,7 @@ namespace moveController
         {
             switch (dashStateNow)
             {
-                case dashState.noDash:DashSpeedStop(); break;
+                case dashState.noDash: DashSpeedStop(); break;
                 case dashState.speedUp: DashSpeedup(); break;
                 case dashState.staySpeed: DashSpeedStay(); break;
                 case dashState.speedDecay: DashSpeedDecay(); break;
@@ -138,7 +142,7 @@ namespace moveController
         private void DashSpeedup()
         {
             DashCurrentSpeed += dashDirection.normalized * dashSpeed;
-            if(++dashNowFrame>dashSpeedUpFrame)
+            if (++dashNowFrame > dashSpeedUpFrame)
             {
                 dashStateNow = dashState.staySpeed;
                 dashNowFrame = 0;
@@ -164,7 +168,7 @@ namespace moveController
         }
         private void DashSpeedStop()
         {
-            DashCurrentSpeed=new Vector2(0,0);
+            DashCurrentSpeed = new Vector2(0, 0);
         }
         #endregion
         #region 移动处理
@@ -172,21 +176,23 @@ namespace moveController
         private void MoveHandle()
         {
             //Debug.Log(playerCurrentSpeed);
-            playerCurrentSpeed=DashCurrentSpeed+GravityCurrentSpeed;
-            transform.Translate(playerCurrentSpeed);
+            playerCurrentSpeed = DashCurrentSpeed + GravityCurrentSpeed;
+            CloseToEdge();
+            transform.Translate(playerCurrentSpeed+nextPosOffset);
+            nextPosOffset = Vector2.zero;
             //rb2d.velocity = playerCurrentSpeed;
-            Vector2 pos=transform.position;
-            Debug.DrawLine(transform.position,pos+DashCurrentSpeed*10,Color.red);
+            Vector2 pos = transform.position;
+            Debug.DrawLine(transform.position, pos + DashCurrentSpeed * 10, Color.red);
         }
         #endregion
         #region 冲刺次数相关
         private bool ResetDashCountOnGround()
         {
-            if(isOnGround && dashStateNow!=dashState.speedUp)
+            if (isOnGround && dashStateNow != dashState.speedUp)
             {
                 ResetDashCount();
                 return true;
-            }    
+            }
             return false;
         }
         public int ResetDashCount()
@@ -198,41 +204,100 @@ namespace moveController
         #region 地面检测
         bool OnGroundCheck()
         {
-                Vector2 pos = transform.position;
-                colliderPosition = boxCollider.offset + pos;
-                colliderSize = boxCollider.size * transform.localScale;            
-                LayerMask ignoreMask = ~(1 << playerMask);
-                colliders = Physics2D.OverlapBoxAll(colliderPosition, colliderSize, 0, ignoreMask);
-                if (colliders.Length != 0)
-                {
-                    isOnGround = true;
-                    return true;
-                }
-                else
-                {
-                    isOnGround = false;
-                    return false;
-                }
-        }
-        private void AvoidStuck() //如果检测到卡墙里，则返回上一个没卡墙里的位置
-        {
-            if (isEnableAvoidStuck)
+            Vector2 pos = transform.position;
+            colliderPosition = boxCollider.offset + pos;
+            colliderSize = boxCollider.size * transform.localScale;
+            LayerMask ignoreMask = ~(1 << playerMask);
+            colliders = Physics2D.OverlapBoxAll(colliderPosition, colliderSize, 0, ignoreMask);
+            if (colliders.Length != 0)
             {
-                LayerMask ignoreMask = ~(1 << playerMask);
-                Vector2 pos = transform.position;
-                pos = capsuleColliderForAvoidStuck.offset + pos;
-                Vector2 size = capsuleColliderForAvoidStuck.size * avoidSize * transform.localScale;
-                avoidStuckCollider = Physics2D.OverlapCapsuleAll(pos, size, 0, 0, ignoreMask);
-                if (avoidStuckCollider.Length == 0)//没卡墙里
+                isOnGround = true;
+                return true;
+            }
+            else
+            {
+                isOnGround = false;
+                return false;
+            }
+        }
+        //public Transform test1, test2;
+        //private void AvoidStuck() //如果检测到卡墙里，则返回上一个没卡墙里的位置
+        //{
+        //    if (isEnableAvoidStuck)
+        //    {
+        //        Debug.LogError("该设置已停用，不建议开启");
+        //        LayerMask ignoreMask = ~(1 << playerMask);
+        //        Vector2 pos = transform.position;
+        //        pos = capsuleCollider.offset + pos;
+        //        Vector2 size = capsuleCollider.size * avoidSize * transform.localScale;
+        //        avoidStuckCollider = Physics2D.OverlapCapsuleAll(pos, size, 0, 0, ignoreMask);
+        //        if (avoidStuckCollider.Length == 0)//没卡墙里
+        //        {
+        //            lastPos = transform.position;
+        //        }
+        //        else
+        //        {
+        //            transform.position = lastPos;
+        //            #region 废弃代码
+        //            //transform.TransformPoint(lastPos);
+        //            //Debug.Log("卡墙里 返回");
+        //            //Vector3 origin = lastPos;//上一帧的位置
+        //            //Vector3 end = transform.position;//触发时的位置
+        //            //Vector3 direction = end - origin;//射线方向
+        //            ////float distance = Vector3.Distance(origin, end);//射线检测距离
+        //            //Vector3 hitpoint;
+        //            //transform.position = origin;
+        //            //RaycastHit2D hit = Physics2D.Raycast(origin, direction, 30, ignoreMask);//发射射线，只检测与"Target"层的碰撞
+        //            //Debug.DrawRay(origin, direction, Color.green, 2);//绘制射线
+        //            //Debug.Assert(hit.collider != null, "未检测到起点");
+        //            ////if (hit.collider != null)
+        //            //{
+        //            //    hitpoint = hit.point;//获得该碰撞点
+        //            //    test1.position = hitpoint;
+        //            //    //direction = origin - hitpoint;
+        //            //    ////hitpoint -= direction.normalized;
+        //            //    //LayerMask playerLayerMask = (1 << playerMask);
+        //            //    //hit = Physics2D.Raycast(hitpoint, direction, 30, playerLayerMask);
+        //            //    //Debug.DrawRay(hitpoint, direction, Color.blue, 2);//绘制射线
+        //            //    //Vector3 selfHitPoint = hit.point;
+        //            //    //test2.position = selfHitPoint;
+        //            //    //Vector3 offset = selfHitPoint - origin;
+        //            //    Vector3 offset = hitpoint - origin;
+        //            //    transform.position = hitpoint;
+        //            #endregion
+
+        //        }
+        //    }
+            
+        //}
+        private void CloseToEdge()
+        {
+            if(isCloseToEdge)
+            { 
+            Vector2 origin = transform.position;
+            LayerMask ignoreMask = ~(1 << playerMask);
+            Vector2 end = origin + playerCurrentSpeed;
+            Vector2 direction = end - origin;
+            float distance = direction.magnitude;
+            RaycastHit2D hit = Physics2D.CapsuleCast(origin, capsuleCollider.size*edgeCheckSize, capsuleCollider.direction, 0, direction,distance,ignoreMask);
+                if (hit.collider != null)
                 {
-                    lastPos = transform.position;
+                    Debug.DrawRay(origin, direction, Color.green, 2);//绘制射线
+                    //Debug.Log("预计撞击");
+                    nextPosOffset = hit.centroid - end;
+                    //test1.position = nextPosOffset;
+                    //test2.position = nextPosOffset + playerCurrentSpeed;
+                    //EditorApplication.isPaused = true;
+                    if(isNoSpeedUpWhenTouchEdge)
+                    {
+                        if(dashStateNow==dashState.speedUp || dashStateNow == dashState.staySpeed)
+                        {
+                            dashNowFrame = 0;
+                            dashStateNow = dashState.speedDecay;
+                        }
+                    }
                 }
-                else
-                {
-                    transform.position = lastPos;
-                    //transform.TransformPoint(lastPos);
-                    Debug.Log("卡墙里 返回");
-                }
+
             }
         }
         #endregion
